@@ -8,7 +8,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	stratos "github.com/stratosnet/stratos-chain/types"
 	"github.com/stratosnet/stratos-chain/x/register/types"
-
 	// this line is used by starport scaffolding # 1
 	abci "github.com/tendermint/tendermint/abci/types"
 
@@ -17,6 +16,7 @@ import (
 )
 
 const (
+	QueryResourceNodeAll           = "resource_node_all"
 	QueryResourceNodeByNetworkAddr = "resource_node_by_network"
 	QueryIndexingNodeByNetworkAddr = "indexing_nodes"
 	QueryNodesTotalStakes          = "nodes_total_stakes"
@@ -30,6 +30,8 @@ const (
 func NewQuerier(k Keeper) sdk.Querier {
 	return func(ctx sdk.Context, path []string, req abci.RequestQuery) ([]byte, error) {
 		switch path[0] {
+		case QueryResourceNodeAll:
+			return getResourceNodeAll(ctx, req, k)
 		case QueryResourceNodeByNetworkAddr:
 			return getResourceNodeByNetworkAddr(ctx, req, k)
 		case QueryIndexingNodeByNetworkAddr:
@@ -46,6 +48,35 @@ func NewQuerier(k Keeper) sdk.Querier {
 			return nil, sdkerrors.Wrap(sdkerrors.ErrUnknownRequest, "unknown register query endpoint "+req.String()+string(req.Data))
 		}
 	}
+}
+
+func getResourceNodeAll(ctx sdk.Context, req abci.RequestQuery, keeper Keeper) ([]byte, error) {
+	var params types.QueryNodesParams
+	err := keeper.cdc.UnmarshalJSON(req.Data, &params)
+	if err != nil {
+		return nil, sdkerrors.Wrap(sdkerrors.ErrJSONUnmarshal, err.Error())
+	}
+
+	itr := keeper.GetResourceNetworksIterator(ctx)
+	bonded := 0
+	total := 0
+	suspended := 0
+	for ; itr.Valid(); itr.Next() {
+		resourceNode := types.MustUnmarshalResourceNode(keeper.cdc, itr.Value())
+		if resourceNode.Status == 2 {
+			bonded += 1
+		}
+		if resourceNode.Suspend == true {
+			suspended += 1
+		}
+		total += 1
+	}
+	ret := struct {
+		Total     int
+		Bonded    int
+		Suspended int
+	}{total, bonded, suspended}
+	return types.ModuleCdc.MustMarshalJSON(ret), nil
 }
 
 func getRegisterParams(ctx sdk.Context, req abci.RequestQuery, k Keeper) ([]byte, error) {
